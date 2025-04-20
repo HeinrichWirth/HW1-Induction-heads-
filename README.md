@@ -62,7 +62,7 @@
 ![grid_attn](AttnAttn.png)
 
 *Наблюдения*  
-* В Conv‑Attn полоса размыта (conv → усредняет ключи), что соответствует прогнозу «smeared keys».
+* В Conv‑Attn полоса размыта (conv → усредняет ключи), что соответствует прогнозу "smeared keys".
 
 ## 6. Сравнение моделей  
 | Модель | Final Loss | Final Acc |
