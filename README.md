@@ -1,80 +1,93 @@
-# HW1
+# Exploring Convolution-Augmented Attention for Next-Token Prediction
 
-## Необходимые библиотеки
-- torch>=2.0.0
-- transformers>=4.30.0
-- datasets>=2.10.0
-- tqdm>=4.64.0
-- matplotlib>=3.5.0
+## Project Overview  
+This project was conducted as part of a university course on neural network architectures. The goal was to explore whether convolution-based architectures can approximate the behavior of *smeared keys* and *induction heads* in transformer models.  
 
-В нуотбуке две модели:
-* **Conv‑Attn** — Emb → Depth‑wise Conv(_k_=5) → Multi‑Head Attention → Lin
-* **Attn‑Attn** — Emb → 4 × Multi‑Head Attention → Lin
+Two architectures were implemented and compared on the **Wikitext-2-raw-v1** dataset for next-token prediction:  
 
-Датасет — *Wikitext‑2‑raw‑v1*, предсказание следующего токена.
+* **Conv-Attn** — Emb → Depth-wise Conv (_k_=5) → Multi-Head Attention → Linear  
+* **Attn-Attn** — Emb → 4 × Multi-Head Attention → Linear  
 
-## 1. Постановка задачи  
-Исследовать, насколько эффективно архитектуры на основе 
-свёртки аппроксимируют поведение "smeared keys" и induction heads.
+The experiment focuses on understanding how convolution layers influence attention patterns and whether they can replicate induction behavior with fewer self-attention layers.
 
-## 2. Архитектуры и гиперпараметры  
+---
 
-| Параметр | Conv‑Attn | Attn‑Attn |
-|----------|-----------|-----------|
-| `d_model` | 512 | 512 |
-| Heads | 8 | 8 |
-| Слои SDPA | 1 | 4 |
-| Conv kernel | 5 | — |
-| LR / sched | 3e‑4 / cosine + warmup 500 | то же |
-| Batch / seq_len | 32 × 256 | то же |
-| Epochs | 15 | 15 |
+## 1. Requirements
+- `torch>=2.0.0`
+- `transformers>=4.30.0`
+- `datasets>=2.10.0`
+- `tqdm>=4.64.0`
+- `matplotlib>=3.5.0`
 
-Сид = 42, оптимизатор — AdamW, grad‑clip = 1.0, AMP‑FP16.
+---
 
-## 3. Ход обучения
+## 2. Architectures & Hyperparameters
 
-![Val Accuracy](ValAcc.png)
-![Val Loss](ValLoss.png)
+| Parameter          | Conv-Attn | Attn-Attn |
+|--------------------|-----------|-----------|
+| `d_model`          | 512       | 512       |
+| Heads              | 8         | 8         |
+| SDPA layers        | 1         | 4         |
+| Conv kernel size   | 5         | —         |
+| LR / scheduler     | 3e-4 / cosine + warmup 500 | same |
+| Batch / seq_len    | 32 × 256  | same      |
+| Epochs             | 15        | 15        |
 
-*Conv‑Attn* сходится быстрее и немного обгоняет *Attn‑Attn* по val‑accuracy
+Additional details: seed = 42, optimizer = AdamW, gradient clipping = 1.0, mixed precision = FP16.
 
-**Сложности**:  
+---
 
-1. Для Conv‑Attn kernel_size = 3 давал слишком «острый» фильтр — линия
-   induction‑head почти исчезала; k = 5 исправило ситуацию.  
-2. Градиенты Conv‑слоя взрывались — решил
-   grad‑clip = 1.0.
+## 3. Training Progress
 
-## 4. Анализ весов Conv  
+![Validation Accuracy](ValAcc.png)  
+![Validation Loss](ValLoss.png)  
 
-![Средний профиль](average.png)
+The **Conv-Attn** model converged faster and slightly outperformed **Attn-Attn** in validation accuracy.  
 
-Максимальное (по модулю) значение по‑прежнему приходится на смещение −1.
+**Notable challenges:**  
+1. With kernel size = 3, Conv-Attn produced an overly sharp filter, making the induction-head stripe nearly disappear; increasing to *k* = 5 resolved the issue.  
+2. Conv layer gradients occasionally exploded, which was mitigated by gradient clipping at 1.0.
 
-Более плавный гауссов вид достигается при kernel_size ≥ 7 и/или после большего числа эпох; здесь модель уже демонстрирует смещение фокуса на t‑1, что подтверждает гипотезу smeared keys.
+---
 
-Отрицательный всплеск на +2 может означать, что модель явно подавляет информацию из будущего, создавая более чёткую каузальность.
+## 4. Convolution Weight Analysis
 
-### Conv‑Attn (все heads)
-![grid_conv](ConvAttn.png)
+![Average Profile](average.png)  
 
-### Attn‑Attn (4 слоя × 8 голов)
-![grid_attn](AttnAttn.png)
+The maximum absolute value remains centered at an offset of −1.  
 
-*Наблюдения*  
-* В Conv‑Attn полоса размыта (conv → усредняет ключи), что соответствует прогнозу "smeared keys".
+A smoother Gaussian-like profile emerges with kernel size ≥ 7 and/or more training epochs. In this experiment, the model already shows a focus shift toward *t-1*, confirming the smeared keys hypothesis.  
 
-## 6. Сравнение моделей  
-| Модель | Final Loss | Final Acc |
-|--------|-----------|-----------|
-| Conv‑Attn | **5.98** | **0.196** |
-| Attn‑Attn | 6.99 | 0.183 |
+The negative spike at +2 may indicate the model actively suppressing future tokens, enforcing stronger causality.
 
-НConv‑Attn + Conv(k=5) достигает лучшей валид‑метрики и воспроизводит ожидаемое поведение.
+### Conv-Attn (all heads)  
+![ConvAttn Heads](ConvAttn.png)
 
-## 7. Ограничения и дальнейшие шаги  
-* Нет анализа длинных зависимостей (>256) — увеличить `seq_len`.  
-* Проверить на TinyStories для коротких контекстов.
+### Attn-Attn (4 layers × 8 heads)  
+![AttnAttn Heads](AttnAttn.png)
 
-## 8. Заключение  
-Depth‑wise Conv действительно реализует "размазывание" ключей и строит induction полосу без дополнительных SDPA‑слоёв. Однако точный head сдвига (Attn‑Attn) остаётся слегка точнее на «хвостах» распределения вероятностей; Кажется, будущее — за гибридными архитектурами Conv + Rotary + SDPA.
+**Observations:**  
+* In Conv-Attn, the attention stripe appears blurred — the convolution smooths keys, aligning with the smeared keys prediction.
+
+---
+
+## 5. Model Comparison
+
+| Model     | Final Loss | Final Accuracy |
+|-----------|-----------|---------------|
+| Conv-Attn | **5.98**  | **0.196**      |
+| Attn-Attn | 6.99      | 0.183          |
+
+Conv-Attn with depth-wise convolution (*k* = 5) achieved the best validation metrics and reproduced the expected induction pattern.
+
+---
+
+## 6. Limitations & Future Work
+* No evaluation on long sequences (>256 tokens) — extend `seq_len`.  
+* Test on TinyStories for short-context scenarios.  
+
+---
+
+## 7. Conclusion
+Depth-wise convolution effectively performs *key smearing* and forms an induction stripe without additional SDPA layers. However, the dedicated shift head in Attn-Attn remains slightly better at capturing rare long-range dependencies.  
+A promising direction may be hybrid architectures combining **Conv + Rotary + SDPA** for optimal performance.
